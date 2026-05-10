@@ -23,6 +23,7 @@ typedef struct {
   char* data;   // response data from server
   size_t size;  // response size of data
   mrb_state* mrb;
+  CURL* curl;
   mrb_value proc;
   mrb_value header;
 } MEMFILE;
@@ -63,6 +64,7 @@ static size_t
 memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
   MEMFILE* mf = (MEMFILE*) stream;
   int block = size * nmemb;
+  long response_code = 0;
 
   mrb_value args[2];
   mrb_state* mrb = mf->mrb;
@@ -75,6 +77,13 @@ memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
     mrb_value parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
     args[0] = str;
     mf->header = mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
+  }
+
+  if (!mrb_nil_p(mf->header) && mf->curl) {
+    curl_easy_getinfo(mf->curl, CURLINFO_RESPONSE_CODE, &response_code);
+    if (response_code > 0) {
+      mrb_iv_set(mrb, mf->header, mrb_intern_cstr(mrb, "status_code"), mrb_fixnum_value(response_code));
+    }
   }
 
   args[0] = mf->header;
@@ -202,6 +211,7 @@ mrb_curl_perform(mrb_state *mrb, mrb_value self, mrb_value url, mrb_value header
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error);
 
   mf = memfopen();
+  mf->curl = curl;
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, mf);
 
   if (mrb_nil_p(b)) {
@@ -364,6 +374,7 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
   }
   
   mf = memfopen();
+  mf->curl = curl;
   curl_easy_setopt(curl, CURLOPT_URL, RSTRING_PTR(url));
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error);
   method = mrb_funcall(mrb, req, "method", 0, NULL);
