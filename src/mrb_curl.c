@@ -537,11 +537,16 @@ mrb_curl_multi_free(mrb_state *mrb, void *ptr)
   req = multi->requests;
   while (req) {
     mrb_curl_multi_request *next = req->next;
+    if (req->multi && req->easy && req->added) {
+      curl_multi_remove_handle(req->multi, req->easy);
+      req->added = 0;
+    }
     req->owner = NULL;
+    req->multi = NULL;
     req->next = NULL;
-    mrb_curl_multi_request_cleanup(req);
     req = next;
   }
+  multi->requests = NULL;
   if (multi->multi) {
     curl_multi_cleanup(multi->multi);
   }
