@@ -19,6 +19,14 @@ static struct mrb_data_type mrb_curl_type = {
   "Curl", mrb_curl_free
 };
 
+typedef struct mrb_curl_multi_request mrb_curl_multi_request;
+
+typedef struct {
+  CURLM* multi;
+  int running;
+  mrb_curl_multi_request* requests;
+} mrb_curl_multi;
+
 typedef struct {
   char* data;   // response data from server
   size_t size;  // response size of data
@@ -26,14 +34,43 @@ typedef struct {
   CURL* curl;
   mrb_value proc;
   mrb_value header;
+  mrb_value request;
 } MEMFILE;
+
+struct mrb_curl_multi_request {
+  CURL* easy;
+  CURLM* multi;
+  mrb_curl_multi* owner;
+  MEMFILE* mf;
+  struct curl_slist* headers;
+  CURLcode result;
+  int done;
+  int added;
+  char error[CURL_ERROR_SIZE];
+  mrb_curl_multi_request* next;
+};
+
+static void mrb_curl_multi_free(mrb_state *, void *);
+static void mrb_curl_multi_request_free(mrb_state *, void *);
+
+static struct mrb_data_type mrb_curl_multi_type = {
+  "Curl::Multi", mrb_curl_multi_free
+};
+
+static struct mrb_data_type mrb_curl_multi_request_type = {
+  "Curl::Multi::Request", mrb_curl_multi_request_free
+};
 
 static MEMFILE*
 memfopen() {
   MEMFILE* mf = (MEMFILE*) malloc(sizeof(MEMFILE));
   if (mf) {
+    memset(mf, 0, sizeof(MEMFILE));
     mf->data = NULL;
     mf->size = 0;
+    mf->proc = mrb_nil_value();
+    mf->header = mrb_nil_value();
+    mf->request = mrb_nil_value();
   }
   return mf;
 }
@@ -42,6 +79,67 @@ static void
 memfclose(MEMFILE* mf) {
   if (mf->data) free(mf->data);
   free(mf);
+}
+
+static mrb_value
+mrb_curl_parse_response(mrb_state *mrb, const char *data, size_t size)
+{
+  mrb_value args[1];
+  mrb_value parser;
+  mrb_value str;
+  struct RClass* _class_http;
+  struct RClass* _class_http_parser;
+
+  str = mrb_str_new(mrb, data, size);
+  _class_http = mrb_module_get(mrb, "HTTP");
+  _class_http_parser = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Parser")));
+  parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
+  args[0] = str;
+  return mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
+}
+
+static void
+mrb_curl_multi_unlink_request(mrb_curl_multi_request *req)
+{
+  mrb_curl_multi_request **slot;
+
+  if (!req || !req->owner) return;
+
+  slot = &req->owner->requests;
+  while (*slot) {
+    if (*slot == req) {
+      *slot = req->next;
+      break;
+    }
+    slot = &(*slot)->next;
+  }
+  req->owner = NULL;
+  req->next = NULL;
+}
+
+static void
+mrb_curl_multi_request_cleanup(mrb_curl_multi_request *req)
+{
+  if (!req) return;
+
+  if (req->multi && req->easy && req->added) {
+    curl_multi_remove_handle(req->multi, req->easy);
+    req->added = 0;
+  }
+  if (req->headers) {
+    curl_slist_free_all(req->headers);
+    req->headers = NULL;
+  }
+  if (req->easy) {
+    curl_easy_cleanup(req->easy);
+    req->easy = NULL;
+  }
+  if (req->mf) {
+    memfclose(req->mf);
+    req->mf = NULL;
+  }
+  req->multi = NULL;
+  req->done = 1;
 }
 
 static size_t
@@ -71,12 +169,10 @@ memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
 
   int ai = mrb_gc_arena_save(mrb); \
   if (mf->data && mrb_nil_p(mf->header))  {
-    mrb_value str = mrb_str_new(mrb, mf->data, mf->size);
-    struct RClass* _class_http = mrb_module_get(mrb, "HTTP");
-    struct RClass* _class_http_parser = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Parser")));
-    mrb_value parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
-    args[0] = str;
-    mf->header = mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
+    mf->header = mrb_curl_parse_response(mrb, mf->data, mf->size);
+    if (!mrb_nil_p(mf->request)) {
+      mrb_iv_set(mrb, mf->request, mrb_intern_lit(mrb, "@header"), mf->header);
+    }
   }
 
   if (!mrb_nil_p(mf->header) && mf->curl) {
@@ -152,9 +248,7 @@ mrb_curl_headers(mrb_state *mrb, CURL* curl, mrb_value headers) {
 }
 
 static void
-mrb_curl_set_options(mrb_state *mrb, mrb_value self) {
-  CURL* curl = DATA_GET_PTR(mrb, self, &mrb_curl_type, CURL);
-
+mrb_curl_apply_options(mrb_state *mrb, CURL* curl, mrb_value self) {
   int ssl_verifypeer;
   mrb_value http_version;
   mrb_value mv_cainfo = mrb_nil_value();
@@ -191,6 +285,13 @@ mrb_curl_set_options(mrb_state *mrb, mrb_value self) {
   if (!mrb_nil_p(timeout_ms)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, mrb_int(mrb, timeout_ms));
   }
+}
+
+static void
+mrb_curl_set_options(mrb_state *mrb, mrb_value self) {
+  CURL* curl = DATA_GET_PTR(mrb, self, &mrb_curl_type, CURL);
+
+  mrb_curl_apply_options(mrb, curl, self);
 }
 
 static mrb_value
@@ -425,6 +526,281 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
   return mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
 }
 
+static void
+mrb_curl_multi_free(mrb_state *mrb, void *ptr)
+{
+  mrb_curl_multi *multi = (mrb_curl_multi*)ptr;
+  mrb_curl_multi_request *req;
+
+  if (!multi) return;
+
+  req = multi->requests;
+  while (req) {
+    mrb_curl_multi_request *next = req->next;
+    req->owner = NULL;
+    req->next = NULL;
+    mrb_curl_multi_request_cleanup(req);
+    req = next;
+  }
+  if (multi->multi) {
+    curl_multi_cleanup(multi->multi);
+  }
+  free(multi);
+}
+
+static void
+mrb_curl_multi_request_free(mrb_state *mrb, void *ptr)
+{
+  mrb_curl_multi_request *req = (mrb_curl_multi_request*)ptr;
+
+  if (!req) return;
+
+  mrb_curl_multi_unlink_request(req);
+  mrb_curl_multi_request_cleanup(req);
+  free(req);
+}
+
+static mrb_value
+mrb_curl_s_multi(mrb_state *mrb, mrb_value self)
+{
+  struct RClass* _class_curl = mrb_class_get(mrb, "Curl");
+  struct RClass* _class_multi = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_lit(mrb, "Multi")));
+
+  return mrb_obj_new(mrb, _class_multi, 0, NULL);
+}
+
+static mrb_value
+mrb_curl_multi_init(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi *multi;
+
+  multi = (mrb_curl_multi*)malloc(sizeof(mrb_curl_multi));
+  if (!multi) {
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to allocate curl multi");
+  }
+  multi->multi = curl_multi_init();
+  if (!multi->multi) {
+    free(multi);
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to initialize curl multi");
+  }
+  multi->running = 0;
+  multi->requests = NULL;
+  mrb_data_init(self, multi, &mrb_curl_multi_type);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@requests"), mrb_ary_new(mrb));
+
+  return self;
+}
+
+static void
+mrb_curl_multi_check_request(mrb_state *mrb, mrb_value req)
+{
+  mrb_value _class_http_request;
+  mrb_value name;
+
+  _class_http_request = mrb_funcall(mrb, req, "class", 0, NULL);
+  name = mrb_funcall(mrb, _class_http_request, "to_s", 0, NULL);
+  if (strcmp(RSTRING_PTR(name), "HTTP::Request")) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "invalid argument");
+  }
+}
+
+static mrb_value
+mrb_curl_multi_send(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi *multi = DATA_GET_PTR(mrb, self, &mrb_curl_multi_type, mrb_curl_multi);
+  mrb_curl_multi_request *reqdata;
+  struct RClass* _class_curl = mrb_class_get(mrb, "Curl");
+  struct RClass* _class_multi = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_lit(mrb, "Multi")));
+  struct RClass* _class_request = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_multi), mrb_intern_lit(mrb, "Request")));
+  mrb_value request_obj;
+  mrb_value url = mrb_nil_value();
+  mrb_value req = mrb_nil_value();
+  mrb_value b = mrb_nil_value();
+  mrb_value method;
+  mrb_value body;
+  mrb_value headers;
+
+  mrb_get_args(mrb, "So&", &url, &req, &b);
+  mrb_curl_multi_check_request(mrb, req);
+
+  reqdata = (mrb_curl_multi_request*)malloc(sizeof(mrb_curl_multi_request));
+  if (!reqdata) {
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to allocate curl request");
+  }
+  memset(reqdata, 0, sizeof(mrb_curl_multi_request));
+  reqdata->easy = curl_easy_init();
+  if (!reqdata->easy) {
+    free(reqdata);
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to initialize curl request");
+  }
+  reqdata->multi = multi->multi;
+  reqdata->owner = multi;
+  reqdata->result = CURLE_OK;
+  reqdata->done = 0;
+  reqdata->added = 0;
+  reqdata->mf = memfopen();
+  if (!reqdata->mf) {
+    curl_easy_cleanup(reqdata->easy);
+    free(reqdata);
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to allocate curl response");
+  }
+  reqdata->mf->curl = reqdata->easy;
+  reqdata->mf->mrb = mrb;
+  reqdata->mf->proc = b;
+  reqdata->mf->header = mrb_nil_value();
+  reqdata->mf->request = mrb_nil_value();
+
+  request_obj = mrb_obj_value(Data_Wrap_Struct(mrb, _class_request, &mrb_curl_multi_request_type, reqdata));
+  reqdata->mf->request = request_obj;
+  mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@multi"), self);
+  mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@proc"), b);
+  mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@header"), mrb_nil_value());
+  mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "timeout"), mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "timeout")));
+  mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "timeout_ms"), mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "timeout_ms")));
+  mrb_ary_push(mrb, mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "@requests")), request_obj);
+
+  curl_easy_setopt(reqdata->easy, CURLOPT_URL, RSTRING_PTR(url));
+  curl_easy_setopt(reqdata->easy, CURLOPT_ERRORBUFFER, reqdata->error);
+  method = mrb_funcall(mrb, req, "method", 0, NULL);
+  if (strcmp("GET", RSTRING_PTR(method))) {
+    curl_easy_setopt(reqdata->easy, CURLOPT_POST, 1L);
+    body = mrb_funcall(mrb, req, "body", 0, NULL);
+    if (!mrb_nil_p(body)) {
+      curl_easy_setopt(reqdata->easy, CURLOPT_POSTFIELDS, RSTRING_PTR(body));
+    }
+  }
+  curl_easy_setopt(reqdata->easy, CURLOPT_WRITEDATA, reqdata->mf);
+  if (mrb_nil_p(b)) {
+    curl_easy_setopt(reqdata->easy, CURLOPT_WRITEFUNCTION, memfwrite);
+  } else {
+    curl_easy_setopt(reqdata->easy, CURLOPT_WRITEFUNCTION, memfwrite_callback);
+  }
+  curl_easy_setopt(reqdata->easy, CURLOPT_HEADERDATA, reqdata->mf);
+  curl_easy_setopt(reqdata->easy, CURLOPT_HEADERFUNCTION, memfwrite);
+  curl_easy_setopt(reqdata->easy, CURLOPT_FOLLOWLOCATION, 0L);
+  curl_easy_setopt(reqdata->easy, CURLOPT_HTTP_TRANSFER_DECODING, 0L);
+
+  mrb_curl_apply_options(mrb, reqdata->easy, request_obj);
+
+  headers = mrb_funcall(mrb, req, "headers", 0, NULL);
+  reqdata->headers = mrb_curl_headers(mrb, reqdata->easy, headers);
+
+  reqdata->next = multi->requests;
+  multi->requests = reqdata;
+
+  if (curl_multi_add_handle(multi->multi, reqdata->easy) != CURLM_OK) {
+    mrb_curl_multi_unlink_request(reqdata);
+    mrb_curl_multi_request_cleanup(reqdata);
+    DATA_PTR(request_obj) = NULL;
+    free(reqdata);
+    mrb_raise(mrb, E_RUNTIME_ERROR, "unable to add curl request");
+  }
+  reqdata->added = 1;
+  multi->running++;
+
+  return request_obj;
+}
+
+static void
+mrb_curl_multi_update(mrb_curl_multi *multi)
+{
+  CURLMsg *msg;
+  int msgs_left;
+
+  while ((msg = curl_multi_info_read(multi->multi, &msgs_left))) {
+    if (msg->msg == CURLMSG_DONE) {
+      mrb_curl_multi_request *req = multi->requests;
+      while (req) {
+        if (req->easy == msg->easy_handle) {
+          req->result = msg->data.result;
+          req->done = 1;
+          if (req->added) {
+            curl_multi_remove_handle(req->multi, req->easy);
+            req->added = 0;
+          }
+          break;
+        }
+        req = req->next;
+      }
+    }
+  }
+}
+
+static mrb_value
+mrb_curl_multi_perform(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi *multi = DATA_GET_PTR(mrb, self, &mrb_curl_multi_type, mrb_curl_multi);
+  CURLMcode code = curl_multi_perform(multi->multi, &multi->running);
+
+  if (code != CURLM_OK) {
+    mrb_raise(mrb, E_RUNTIME_ERROR, curl_multi_strerror(code));
+  }
+  mrb_curl_multi_update(multi);
+
+  return mrb_fixnum_value(multi->running);
+}
+
+static mrb_value
+mrb_curl_multi_done_p(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi *multi = DATA_GET_PTR(mrb, self, &mrb_curl_multi_type, mrb_curl_multi);
+  mrb_curl_multi_request *req = multi->requests;
+
+  while (req) {
+    if (!req->done) return mrb_false_value();
+    req = req->next;
+  }
+
+  return mrb_true_value();
+}
+
+static mrb_value
+mrb_curl_multi_running(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi *multi = DATA_GET_PTR(mrb, self, &mrb_curl_multi_type, mrb_curl_multi);
+
+  return mrb_fixnum_value(multi->running);
+}
+
+static mrb_value
+mrb_curl_multi_request_done_p(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi_request *req = DATA_GET_PTR(mrb, self, &mrb_curl_multi_request_type, mrb_curl_multi_request);
+
+  return mrb_bool_value(req->done);
+}
+
+static mrb_value
+mrb_curl_multi_request_error(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi_request *req = DATA_GET_PTR(mrb, self, &mrb_curl_multi_request_type, mrb_curl_multi_request);
+
+  if (req->result == CURLE_OK) return mrb_nil_value();
+  if (req->error[0]) return mrb_str_new_cstr(mrb, req->error);
+  return mrb_str_new_cstr(mrb, curl_easy_strerror(req->result));
+}
+
+static mrb_value
+mrb_curl_multi_request_response(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi_request *req = DATA_GET_PTR(mrb, self, &mrb_curl_multi_request_type, mrb_curl_multi_request);
+
+  if (req->result != CURLE_OK) {
+    if (req->error[0]) {
+      mrb_raise(mrb, E_RUNTIME_ERROR, req->error);
+    }
+    mrb_raise(mrb, E_RUNTIME_ERROR, curl_easy_strerror(req->result));
+  }
+  if (req->mf && !mrb_nil_p(req->mf->header)) {
+    return req->mf->header;
+  }
+  if (req->mf && req->mf->data) {
+    return mrb_curl_parse_response(mrb, req->mf->data, req->mf->size);
+  }
+
+  return mrb_nil_value();
+}
+
 static mrb_value
 mrb_curl_set_timeout(mrb_state *mrb, mrb_value self)
 {
@@ -467,10 +843,16 @@ void
 mrb_mruby_curl_gem_init(mrb_state* mrb)
 {
   struct RClass* _class_curl;
+  struct RClass* _class_multi;
+  struct RClass* _class_multi_request;
   int ai = mrb_gc_arena_save(mrb);
 
   _class_curl = mrb_define_class(mrb, "Curl", mrb->object_class);
   MRB_SET_INSTANCE_TT(_class_curl, MRB_TT_DATA);
+  _class_multi = mrb_define_class_under(mrb, _class_curl, "Multi", mrb->object_class);
+  MRB_SET_INSTANCE_TT(_class_multi, MRB_TT_DATA);
+  _class_multi_request = mrb_define_class_under(mrb, _class_multi, "Request", mrb->object_class);
+  MRB_SET_INSTANCE_TT(_class_multi_request, MRB_TT_DATA);
 
   mrb_define_method(mrb, _class_curl, "initialize", mrb_curl_init, MRB_ARGS_NONE());
 
@@ -482,11 +864,26 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, _class_curl, "send",   mrb_curl_send,   MRB_ARGS_REQ(2));
 
   mrb_define_method(mrb, _class_curl, "timeout=", mrb_curl_set_timeout, MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, _class_curl, "timeout", mrb_curl_get_timeout, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "timeout", mrb_curl_get_timeout, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_curl, "timeout_ms=", mrb_curl_set_timeout_ms, MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, _class_curl, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_NONE());
 
   mrb_define_class_method(mrb, _class_curl, "global_init", mrb_curl_global_init, MRB_ARGS_REQ(0));
+  mrb_define_class_method(mrb, _class_curl, "multi", mrb_curl_s_multi, MRB_ARGS_NONE());
+
+  mrb_define_method(mrb, _class_multi, "initialize", mrb_curl_multi_init, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "send", mrb_curl_multi_send, MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, _class_multi, "perform", mrb_curl_multi_perform, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "done?", mrb_curl_multi_done_p, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "running", mrb_curl_multi_running, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "timeout=", mrb_curl_set_timeout, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "timeout", mrb_curl_get_timeout, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "timeout_ms=", mrb_curl_set_timeout_ms, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_NONE());
+
+  mrb_define_method(mrb, _class_multi_request, "done?", mrb_curl_multi_request_done_p, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi_request, "response", mrb_curl_multi_request_response, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi_request, "error", mrb_curl_multi_request_error, MRB_ARGS_NONE());
 
   mrb_define_const(mrb, _class_curl, "SSL_VERIFYPEER", mrb_fixnum_value(1));
   mrb_define_const(mrb, _class_curl, "CAINFO", mrb_nil_value());
