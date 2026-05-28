@@ -1,7 +1,7 @@
 MRuby::Gem::Specification.new('mruby-curl') do |spec|
   spec.license = 'MIT'
   spec.authors = 'mattn'
-  spec.version = "0.1.3"
+  spec.version = "0.2.0"
 
   spec.linker.libraries << 'curl'
   spec.add_dependency 'mruby-http'
