@@ -61,7 +61,7 @@ describe "Curl::Multi" do
     it "performs a single GET request" do
       req = HTTP::Request.new
       req.method = "GET"
-      curl_req = @multi.send("https://google.com", req)
+      curl_req = @multi.send("http://example.com", req)
       while !@multi.done?
         @multi.perform
       end
@@ -72,7 +72,7 @@ describe "Curl::Multi" do
     it "returns a parsed response" do
       req = HTTP::Request.new
       req.method = "GET"
-      curl_req = @multi.send("https://google.com", req)
+      curl_req = @multi.send("http://example.com", req)
       while !@multi.done?
         @multi.perform
       end
@@ -86,8 +86,8 @@ describe "Curl::Multi" do
       req1.method = "GET"
       req2 = HTTP::Request.new
       req2.method = "GET"
-      r1 = @multi.send("https://google.com", req1)
-      r2 = @multi.send("https://google.com", req2)
+      r1 = @multi.send("http://example.com", req1)
+      r2 = @multi.send("http://example.com", req2)
       while !@multi.done?
         @multi.perform
       end
@@ -100,7 +100,7 @@ describe "Curl::Multi" do
     it "tracks running count during requests" do
       req = HTTP::Request.new
       req.method = "GET"
-      @multi.send("https://google.com", req)
+      @multi.send("http://example.com", req)
       expect(@multi.running).must_equal 1
       while !@multi.done?
         @multi.perform
@@ -124,7 +124,7 @@ describe "Curl::Multi::Request" do
     it "transitions from not done to done" do
       req_obj = HTTP::Request.new
       req_obj.method = "GET"
-      curl_req = @multi.send("https://google.com", req_obj)
+      curl_req = @multi.send("http://example.com", req_obj)
       expect(curl_req.done?).must_equal false
       while !@multi.done?
         @multi.perform
