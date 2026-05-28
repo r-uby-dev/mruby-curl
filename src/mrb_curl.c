@@ -167,6 +167,9 @@ mrb_curl_multi_request_cleanup(mrb_curl_multi_request *req)
   if (req->multi && req->easy && req->added) {
     curl_multi_remove_handle(req->multi, req->easy);
     req->added = 0;
+    if (req->owner && req->owner->running > 0) {
+      req->owner->running--;
+    }
   }
   if (req->headers) {
     curl_slist_free_all(req->headers);
@@ -822,6 +825,19 @@ mrb_curl_multi_request_done_p(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
+mrb_curl_multi_request_cancel(mrb_state *mrb, mrb_value self)
+{
+  mrb_curl_multi_request *req = DATA_GET_PTR(mrb, self, &mrb_curl_multi_request_type, mrb_curl_multi_request);
+
+  if (!req) return self;
+  req->result = CURLE_ABORTED_BY_CALLBACK;
+  mrb_curl_multi_request_cleanup(req);
+  mrb_curl_multi_unlink_request(req);
+
+  return self;
+}
+
+static mrb_value
 mrb_curl_multi_request_error(mrb_state *mrb, mrb_value self)
 {
   mrb_curl_multi_request *req = DATA_GET_PTR(mrb, self, &mrb_curl_multi_request_type, mrb_curl_multi_request);
@@ -933,6 +949,7 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, _class_multi, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_NONE());
 
   mrb_define_method(mrb, _class_multi_request, "done?", mrb_curl_multi_request_done_p, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi_request, "cancel", mrb_curl_multi_request_cancel, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_multi_request, "response", mrb_curl_multi_request_response, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_multi_request, "error", mrb_curl_multi_request_error, MRB_ARGS_NONE());
 
