@@ -671,7 +671,8 @@ mrb_curl_multi_send(mrb_state *mrb, mrb_value self)
     curl_easy_setopt(reqdata->easy, CURLOPT_POST, 1L);
     body = mrb_funcall(mrb, req, "body", 0, NULL);
     if (!mrb_nil_p(body)) {
-      curl_easy_setopt(reqdata->easy, CURLOPT_POSTFIELDS, RSTRING_PTR(body));
+      curl_easy_setopt(reqdata->easy, CURLOPT_POSTFIELDSIZE, (long)RSTRING_LEN(body));
+      curl_easy_setopt(reqdata->easy, CURLOPT_COPYPOSTFIELDS, RSTRING_PTR(body));
     }
   }
   curl_easy_setopt(reqdata->easy, CURLOPT_WRITEDATA, reqdata->mf);
