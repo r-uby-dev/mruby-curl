@@ -35,6 +35,7 @@ typedef struct {
   mrb_value proc;
   mrb_value header;
   mrb_value request;
+  mrb_value gc_root;
 } MEMFILE;
 
 struct mrb_curl_multi_request {
@@ -71,12 +72,53 @@ memfopen() {
     mf->proc = mrb_nil_value();
     mf->header = mrb_nil_value();
     mf->request = mrb_nil_value();
+    mf->gc_root = mrb_nil_value();
   }
   return mf;
 }
 
 static void
+memfensure_root(MEMFILE* mf) {
+  if (!mf || !mf->mrb || !mrb_nil_p(mf->gc_root)) return;
+
+  mf->gc_root = mrb_ary_new_capa(mf->mrb, 3);
+  mrb_gc_register(mf->mrb, mf->gc_root);
+  mrb_ary_push(mf->mrb, mf->gc_root, mf->proc);
+  mrb_ary_push(mf->mrb, mf->gc_root, mf->header);
+  mrb_ary_push(mf->mrb, mf->gc_root, mf->request);
+}
+
+static void
+memfset_value(MEMFILE* mf, mrb_value *slot, int index, mrb_value value) {
+  if (!mf) return;
+  *slot = value;
+  memfensure_root(mf);
+  if (mf->mrb && !mrb_nil_p(mf->gc_root)) {
+    mrb_ary_set(mf->mrb, mf->gc_root, index, value);
+  }
+}
+
+static void
+memfset_proc(MEMFILE* mf, mrb_value value) {
+  memfset_value(mf, &mf->proc, 0, value);
+}
+
+static void
+memfset_header(MEMFILE* mf, mrb_value value) {
+  memfset_value(mf, &mf->header, 1, value);
+}
+
+static void
+memfset_request(MEMFILE* mf, mrb_value value) {
+  memfset_value(mf, &mf->request, 2, value);
+}
+
+static void
 memfclose(MEMFILE* mf) {
+  if (!mf) return;
+  if (mf->mrb && !mrb_nil_p(mf->gc_root)) {
+    mrb_gc_unregister(mf->mrb, mf->gc_root);
+  }
   if (mf->data) free(mf->data);
   free(mf);
 }
@@ -169,7 +211,7 @@ memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
 
   int ai = mrb_gc_arena_save(mrb); \
   if (mf->data && mrb_nil_p(mf->header))  {
-    mf->header = mrb_curl_parse_response(mrb, mf->data, mf->size);
+    memfset_header(mf, mrb_curl_parse_response(mrb, mf->data, mf->size));
     if (!mrb_nil_p(mf->request)) {
       mrb_iv_set(mrb, mf->request, mrb_intern_lit(mrb, "@header"), mf->header);
     }
@@ -185,7 +227,10 @@ memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
   args[0] = mf->header;
   args[1] = mrb_str_new(mrb, ptr, block);
   mrb_gc_arena_restore(mrb, ai);
+  mrb_gc_protect(mrb, args[0]);
+  mrb_gc_protect(mrb, args[1]);
   mrb_yield_argv(mrb, mf->proc, 2, args);
+  mrb_gc_arena_restore(mrb, ai);
   return block;
 }
 
@@ -319,8 +364,8 @@ mrb_curl_perform(mrb_state *mrb, mrb_value self, mrb_value url, mrb_value header
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memfwrite);
   } else {
     mf->mrb = mrb;
-    mf->proc = b;
-    mf->header = mrb_nil_value();
+    memfset_proc(mf, b);
+    memfset_header(mf, mrb_nil_value());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memfwrite_callback);
   }
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, mf);
@@ -489,8 +534,8 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memfwrite);
   } else {
     mf->mrb = mrb;
-    mf->proc = b;
-    mf->header = mrb_nil_value();
+    memfset_proc(mf, b);
+    memfset_header(mf, mrb_nil_value());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, memfwrite_callback);
   }
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, mf);
@@ -651,12 +696,12 @@ mrb_curl_multi_send(mrb_state *mrb, mrb_value self)
   }
   reqdata->mf->curl = reqdata->easy;
   reqdata->mf->mrb = mrb;
-  reqdata->mf->proc = b;
-  reqdata->mf->header = mrb_nil_value();
-  reqdata->mf->request = mrb_nil_value();
+  memfset_proc(reqdata->mf, b);
+  memfset_header(reqdata->mf, mrb_nil_value());
+  memfset_request(reqdata->mf, mrb_nil_value());
 
   request_obj = mrb_obj_value(Data_Wrap_Struct(mrb, _class_request, &mrb_curl_multi_request_type, reqdata));
-  reqdata->mf->request = request_obj;
+  memfset_request(reqdata->mf, request_obj);
   mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@multi"), self);
   mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@proc"), b);
   mrb_iv_set(mrb, request_obj, mrb_intern_lit(mrb, "@header"), mrb_nil_value());
