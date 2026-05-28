@@ -1,10 +1,9 @@
 MRuby::Gem::Specification.new('mruby-curl') do |spec|
   spec.license = 'MIT'
   spec.authors = 'mattn'
-  spec.version = "0.1.0"
+  spec.version = "0.1.1"
 
   spec.linker.libraries << 'curl'
-
   spec.add_dependency 'mruby-http'
 
   if ENV["ENV"] == "TEST"
