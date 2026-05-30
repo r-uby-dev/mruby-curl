@@ -955,9 +955,11 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
 
   mrb_define_const(mrb, _class_curl, "SSL_VERIFYPEER", mrb_fixnum_value(1));
   mrb_define_const(mrb, _class_curl, "CAINFO", mrb_nil_value());
-  mrb_define_const(mrb, _class_curl, "HTTP_VERSION", mrb_fixnum_value(CURL_HTTP_VERSION_1_1));
+  mrb_define_const(mrb, _class_curl, "HTTP_VERSION", mrb_fixnum_value(CURL_HTTP_VERSION_2TLS));
   mrb_define_const(mrb, _class_curl, "HTTP_1_0", mrb_fixnum_value(CURL_HTTP_VERSION_1_0));
   mrb_define_const(mrb, _class_curl, "HTTP_1_1", mrb_fixnum_value(CURL_HTTP_VERSION_1_1));
+  mrb_define_const(mrb, _class_curl, "HTTP_2TLS", mrb_fixnum_value(CURL_HTTP_VERSION_2TLS));
+  mrb_define_const(mrb, _class_curl, "HTTP_2_0", mrb_fixnum_value(CURL_HTTP_VERSION_2_0));
   mrb_define_const(mrb, _class_curl, "TIMEOUT", mrb_nil_value());
   mrb_define_const(mrb, _class_curl, "TIMEOUT_MS", mrb_nil_value());
 

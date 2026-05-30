@@ -67,8 +67,8 @@ describe "Curl" do
       expect(Curl::CAINFO).must_be_nil
     end
 
-    it "defaults HTTP_VERSION to HTTP_1_1" do
-      expect(Curl::HTTP_VERSION).must_equal Curl::HTTP_1_1
+    it "defaults HTTP_VERSION to HTTP_2TLS" do
+      expect(Curl::HTTP_VERSION).must_equal Curl::HTTP_2TLS
     end
   end
 
