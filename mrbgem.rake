@@ -1,7 +1,9 @@
+load File.join(__dir__, "mrblib", "curl", "version.rb")
+
 MRuby::Gem::Specification.new('mruby-curl') do |spec|
   spec.license = 'MIT'
   spec.authors = 'mattn'
-  spec.version = "0.2.0"
+  spec.version = Curl::VERSION
 
   spec.linker.libraries << 'curl'
   spec.add_dependency 'mruby-http'
