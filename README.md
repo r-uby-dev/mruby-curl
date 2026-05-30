@@ -172,7 +172,10 @@ Curl::SSL_VERIFYPEER = 0
 
 **HTTP version**
 
-Switch to HTTP/1.0 instead of the default HTTP/1.1:
+The default is `Curl::HTTP_2TLS`, which tries HTTP/2 for HTTPS requests and
+falls back when HTTP/2 is not available.
+
+Switch to HTTP/1.0 explicitly:
 
 ```ruby
 Curl::HTTP_VERSION = Curl::HTTP_1_0
