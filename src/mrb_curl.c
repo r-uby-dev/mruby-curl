@@ -9,6 +9,7 @@
 #include <mruby/variable.h>
 #include <curl/curl.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define REQ_GET(mrb, instance, name) \
   RSTRING_PTR(mrb_iv_get(mrb, instance, mrb_intern_cstr(mrb, name)))
@@ -132,7 +133,12 @@ mrb_curl_parse_response(mrb_state *mrb, const char *data, size_t size)
   struct RClass* _class_http;
   struct RClass* _class_http_parser;
 
-  str = mrb_str_new(mrb, data, size);
+  if (size >= 7 && strncmp(data, "HTTP/2 ", 7) == 0) {
+    str = mrb_str_new_lit(mrb, "HTTP/2.0 ");
+    mrb_str_cat(mrb, str, data + 7, size - 7);
+  } else {
+    str = mrb_str_new(mrb, data, size);
+  }
   _class_http = mrb_module_get(mrb, "HTTP");
   _class_http_parser = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Parser")));
   parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
@@ -348,11 +354,7 @@ mrb_curl_perform(mrb_state *mrb, mrb_value self, mrb_value url, mrb_value header
   CURLcode res = CURLE_OK;
   MEMFILE* mf;
   char error[CURL_ERROR_SIZE] = {0};
-  mrb_value args[1];
-  mrb_value parser;
   mrb_value str;
-  struct RClass* _class_http;
-  struct RClass* _class_http_parser;
   struct curl_slist* headerlist;
 
   curl_easy_setopt(curl, CURLOPT_URL, RSTRING_PTR(url));
@@ -392,14 +394,9 @@ mrb_curl_perform(mrb_state *mrb, mrb_value self, mrb_value url, mrb_value header
     return mrb_nil_value();
   }
 
-  str = mrb_str_new(mrb, mf->data, mf->size);
+  str = mrb_curl_parse_response(mrb, mf->data, mf->size);
   memfclose(mf);
-
-  _class_http = mrb_module_get(mrb, "HTTP");
-  _class_http_parser = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Parser")));
-  parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
-  args[0] = str;
-  return mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
+  return str;
 }
 
 static mrb_value
@@ -506,10 +503,6 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
   mrb_value name;
   mrb_value headers;
   mrb_value str;
-  struct RClass* _class_http;
-  struct RClass* _class_http_parser;
-  mrb_value parser;
-  mrb_value args[1];
 
   mrb_value url = mrb_nil_value();
   mrb_value req = mrb_nil_value();
@@ -564,14 +557,9 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
     return mrb_nil_value();
   }
 
-  str = mrb_str_new(mrb, mf->data, mf->size);
+  str = mrb_curl_parse_response(mrb, mf->data, mf->size);
   memfclose(mf);
-
-  _class_http = mrb_module_get(mrb, "HTTP");
-  _class_http_parser = mrb_class_ptr(mrb_const_get(mrb, mrb_obj_value(_class_http), mrb_intern_cstr(mrb, "Parser")));
-  parser = mrb_obj_new(mrb, _class_http_parser, 0, NULL);
-  args[0] = str;
-  return mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
+  return str;
 }
 
 static void
