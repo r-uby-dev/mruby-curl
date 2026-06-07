@@ -40,6 +40,14 @@ response = curl.get("https://www.ruby-lang.org/en/", headers)
 puts response.body
 ```
 
+Pass query parameters with the `params:` keyword. The hash is
+URL-encoded and appended to the request URL for you:
+
+```ruby
+response = curl.get("https://api.example.com/search", params: {q: "ruby curl"})
+# Requests https://api.example.com/search?q=ruby+curl
+```
+
 **Explanation**
 
 * `Curl.new`<br>
@@ -48,6 +56,9 @@ puts response.body
 * `curl.get(url, headers)`<br>
   Sends a GET request. The second argument is an optional hash of HTTP
   headers. Returns an `HTTP::Response` parsed by mruby-http.
+* `params: {...}`<br>
+  Adds query parameters to the URL. Keys and values are URL-encoded
+  automatically.
 * `response.body`<br>
   The response body as a string. The response object also exposes
   `headers`, `status_code`, and other attributes through mruby-http.
@@ -82,6 +93,7 @@ and reuses a singleton `Curl` instance:
 
 ```ruby
 response = Curl.get("https://api.example.com/data")
+response = Curl.get("https://api.example.com/search", params: {q: "ruby curl"})
 response = Curl.post("https://api.example.com/data", "body")
 response = Curl.put("https://api.example.com/data", "body")
 response = Curl.patch("https://api.example.com/data", "body")

@@ -1,12 +1,12 @@
 class Curl
-  def self.delete(url, headers = nil, &block)
+  def self.delete(url, headers = nil, params: nil, &block)
     @curl ||= new
-    @curl.delete url, headers, &block
+    @curl.delete URL.new(url, params).encoded, headers, &block
   end
 
-  def self.get(url, headers = nil, &block)
+  def self.get(url, headers = nil, params: nil, &block)
     @curl ||= new
-    @curl.get url, headers, &block
+    @curl.get URL.new(url, params).encoded, headers, &block
   end
 
   def self.patch(url, data, headers = nil, &block)

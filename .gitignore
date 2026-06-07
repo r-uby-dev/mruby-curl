@@ -2,4 +2,7 @@ gem_*
 gem-*
 mrb-*.a
 src/*.o
+bin/
+tmp/
+*.lock
 .local.vimrc
