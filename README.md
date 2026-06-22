@@ -174,6 +174,18 @@ curl.timeout = 30       # 30 seconds
 curl.timeout_ms = 5000  # 5 seconds (overrides timeout if both are set)
 ```
 
+For long-running streams, prefer a connection timeout plus a low-speed
+timeout instead of a total request timeout:
+
+```ruby
+curl.connect_timeout = 10
+curl.low_speed_limit = 1
+curl.low_speed_time = 60
+```
+
+This lets an active stream run longer than 60 seconds, but aborts if the
+transfer drops below 1 byte per second for 60 seconds.
+
 **SSL verification**
 
 Disable SSL peer verification (not recommended for production):

@@ -40,6 +40,26 @@ describe "Curl" do
       @curl.timeout_ms = 1000
       expect(@curl.timeout_ms).must_equal 1000
     end
+
+    it "sets and gets connect timeout in seconds" do
+      @curl.connect_timeout = 10
+      expect(@curl.connect_timeout).must_equal 10
+    end
+
+    it "sets and gets connect timeout in milliseconds" do
+      @curl.connect_timeout_ms = 2500
+      expect(@curl.connect_timeout_ms).must_equal 2500
+    end
+
+    it "sets and gets low speed limit" do
+      @curl.low_speed_limit = 1
+      expect(@curl.low_speed_limit).must_equal 1
+    end
+
+    it "sets and gets low speed time" do
+      @curl.low_speed_time = 60
+      expect(@curl.low_speed_time).must_equal 60
+    end
   end
 
   describe "constants" do
@@ -61,6 +81,22 @@ describe "Curl" do
 
     it "defines TIMEOUT_MS" do
       expect(Curl::TIMEOUT_MS).must_be_nil
+    end
+
+    it "defines CONNECT_TIMEOUT" do
+      expect(Curl::CONNECT_TIMEOUT).must_be_nil
+    end
+
+    it "defines CONNECT_TIMEOUT_MS" do
+      expect(Curl::CONNECT_TIMEOUT_MS).must_be_nil
+    end
+
+    it "defines LOW_SPEED_LIMIT" do
+      expect(Curl::LOW_SPEED_LIMIT).must_be_nil
+    end
+
+    it "defines LOW_SPEED_TIME" do
+      expect(Curl::LOW_SPEED_TIME).must_be_nil
     end
 
     it "defaults CAINFO to nil" do

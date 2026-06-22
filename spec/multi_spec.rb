@@ -43,6 +43,47 @@ describe "Curl::Multi" do
       expect(@multi).must_respond_to :timeout_ms=
     end
 
+    it "responds to connect_timeout" do
+      expect(@multi).must_respond_to :connect_timeout
+    end
+
+    it "responds to connect_timeout=" do
+      expect(@multi).must_respond_to :connect_timeout=
+    end
+
+    it "responds to connect_timeout_ms" do
+      expect(@multi).must_respond_to :connect_timeout_ms
+    end
+
+    it "responds to connect_timeout_ms=" do
+      expect(@multi).must_respond_to :connect_timeout_ms=
+    end
+
+    it "responds to low_speed_limit" do
+      expect(@multi).must_respond_to :low_speed_limit
+    end
+
+    it "responds to low_speed_limit=" do
+      expect(@multi).must_respond_to :low_speed_limit=
+    end
+
+    it "responds to low_speed_time" do
+      expect(@multi).must_respond_to :low_speed_time
+    end
+
+    it "responds to low_speed_time=" do
+      expect(@multi).must_respond_to :low_speed_time=
+    end
+
+    it "sets and gets streaming timeout options" do
+      @multi.connect_timeout = 10
+      @multi.low_speed_limit = 1
+      @multi.low_speed_time = 60
+      expect(@multi.connect_timeout).must_equal 10
+      expect(@multi.low_speed_limit).must_equal 1
+      expect(@multi.low_speed_time).must_equal 60
+    end
+
     it "is done when no requests are queued" do
       expect(@multi.done?).must_equal true
     end

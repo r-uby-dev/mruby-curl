@@ -308,6 +308,10 @@ mrb_curl_apply_options(mrb_state *mrb, CURL* curl, mrb_value self) {
   mrb_value mv_cainfo = mrb_nil_value();
   mrb_value timeout;
   mrb_value timeout_ms;
+  mrb_value connect_timeout;
+  mrb_value connect_timeout_ms;
+  mrb_value low_speed_limit;
+  mrb_value low_speed_time;
   struct RClass* _class_curl;
 
   _class_curl = mrb_class_get(mrb, "Curl");
@@ -338,6 +342,38 @@ mrb_curl_apply_options(mrb_state *mrb, CURL* curl, mrb_value self) {
   }
   if (!mrb_nil_p(timeout_ms)) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, mrb_int(mrb, timeout_ms));
+  }
+
+  connect_timeout = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "connect_timeout"));
+  if (mrb_nil_p(connect_timeout)) {
+    connect_timeout = mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_cstr(mrb, "CONNECT_TIMEOUT"));
+  }
+  if (!mrb_nil_p(connect_timeout)) {
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, mrb_int(mrb, connect_timeout));
+  }
+
+  connect_timeout_ms = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "connect_timeout_ms"));
+  if (mrb_nil_p(connect_timeout_ms)) {
+    connect_timeout_ms = mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_cstr(mrb, "CONNECT_TIMEOUT_MS"));
+  }
+  if (!mrb_nil_p(connect_timeout_ms)) {
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, mrb_int(mrb, connect_timeout_ms));
+  }
+
+  low_speed_limit = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "low_speed_limit"));
+  if (mrb_nil_p(low_speed_limit)) {
+    low_speed_limit = mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_cstr(mrb, "LOW_SPEED_LIMIT"));
+  }
+  if (!mrb_nil_p(low_speed_limit)) {
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, mrb_int(mrb, low_speed_limit));
+  }
+
+  low_speed_time = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "low_speed_time"));
+  if (mrb_nil_p(low_speed_time)) {
+    low_speed_time = mrb_const_get(mrb, mrb_obj_value(_class_curl), mrb_intern_cstr(mrb, "LOW_SPEED_TIME"));
+  }
+  if (!mrb_nil_p(low_speed_time)) {
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, mrb_int(mrb, low_speed_time));
   }
 }
 
@@ -894,6 +930,82 @@ mrb_curl_get_timeout_ms(mrb_state *mrb, mrb_value self)
   return timeout_ms;
 }
 
+static mrb_value
+mrb_curl_set_connect_timeout(mrb_state *mrb, mrb_value self)
+{
+  mrb_value connect_timeout = mrb_nil_value();
+  mrb_get_args(mrb, "o", &connect_timeout);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "connect_timeout"), connect_timeout);
+
+  return connect_timeout;
+}
+
+static mrb_value
+mrb_curl_get_connect_timeout(mrb_state *mrb, mrb_value self)
+{
+  mrb_value connect_timeout = mrb_nil_value();
+  connect_timeout = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "connect_timeout"));
+
+  return connect_timeout;
+}
+
+static mrb_value
+mrb_curl_set_connect_timeout_ms(mrb_state *mrb, mrb_value self)
+{
+  mrb_value connect_timeout_ms = mrb_nil_value();
+  mrb_get_args(mrb, "o", &connect_timeout_ms);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "connect_timeout_ms"), connect_timeout_ms);
+
+  return connect_timeout_ms;
+}
+
+static mrb_value
+mrb_curl_get_connect_timeout_ms(mrb_state *mrb, mrb_value self)
+{
+  mrb_value connect_timeout_ms = mrb_nil_value();
+  connect_timeout_ms = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "connect_timeout_ms"));
+
+  return connect_timeout_ms;
+}
+
+static mrb_value
+mrb_curl_set_low_speed_limit(mrb_state *mrb, mrb_value self)
+{
+  mrb_value low_speed_limit = mrb_nil_value();
+  mrb_get_args(mrb, "o", &low_speed_limit);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "low_speed_limit"), low_speed_limit);
+
+  return low_speed_limit;
+}
+
+static mrb_value
+mrb_curl_get_low_speed_limit(mrb_state *mrb, mrb_value self)
+{
+  mrb_value low_speed_limit = mrb_nil_value();
+  low_speed_limit = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "low_speed_limit"));
+
+  return low_speed_limit;
+}
+
+static mrb_value
+mrb_curl_set_low_speed_time(mrb_state *mrb, mrb_value self)
+{
+  mrb_value low_speed_time = mrb_nil_value();
+  mrb_get_args(mrb, "o", &low_speed_time);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "low_speed_time"), low_speed_time);
+
+  return low_speed_time;
+}
+
+static mrb_value
+mrb_curl_get_low_speed_time(mrb_state *mrb, mrb_value self)
+{
+  mrb_value low_speed_time = mrb_nil_value();
+  low_speed_time = mrb_iv_get(mrb, self, mrb_intern_lit(mrb, "low_speed_time"));
+
+  return low_speed_time;
+}
+
 void
 mrb_mruby_curl_gem_init(mrb_state* mrb)
 {
@@ -922,6 +1034,14 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, _class_curl, "timeout", mrb_curl_get_timeout, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_curl, "timeout_ms=", mrb_curl_set_timeout_ms, MRB_ARGS_REQ(1));
   mrb_define_method(mrb, _class_curl, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_curl, "connect_timeout=", mrb_curl_set_connect_timeout, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "connect_timeout", mrb_curl_get_connect_timeout, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_curl, "connect_timeout_ms=", mrb_curl_set_connect_timeout_ms, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "connect_timeout_ms", mrb_curl_get_connect_timeout_ms, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_curl, "low_speed_limit=", mrb_curl_set_low_speed_limit, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "low_speed_limit", mrb_curl_get_low_speed_limit, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_curl, "low_speed_time=", mrb_curl_set_low_speed_time, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_curl, "low_speed_time", mrb_curl_get_low_speed_time, MRB_ARGS_NONE());
 
   mrb_define_class_method(mrb, _class_curl, "global_init", mrb_curl_global_init, MRB_ARGS_REQ(0));
   mrb_define_class_method(mrb, _class_curl, "multi", mrb_curl_s_multi, MRB_ARGS_NONE());
@@ -935,6 +1055,14 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, _class_multi, "timeout", mrb_curl_get_timeout, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_multi, "timeout_ms=", mrb_curl_set_timeout_ms, MRB_ARGS_REQ(1));
   mrb_define_method(mrb, _class_multi, "timeout_ms", mrb_curl_get_timeout_ms, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "connect_timeout=", mrb_curl_set_connect_timeout, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "connect_timeout", mrb_curl_get_connect_timeout, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "connect_timeout_ms=", mrb_curl_set_connect_timeout_ms, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "connect_timeout_ms", mrb_curl_get_connect_timeout_ms, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "low_speed_limit=", mrb_curl_set_low_speed_limit, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "low_speed_limit", mrb_curl_get_low_speed_limit, MRB_ARGS_NONE());
+  mrb_define_method(mrb, _class_multi, "low_speed_time=", mrb_curl_set_low_speed_time, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, _class_multi, "low_speed_time", mrb_curl_get_low_speed_time, MRB_ARGS_NONE());
 
   mrb_define_method(mrb, _class_multi_request, "done?", mrb_curl_multi_request_done_p, MRB_ARGS_NONE());
   mrb_define_method(mrb, _class_multi_request, "cancel", mrb_curl_multi_request_cancel, MRB_ARGS_NONE());
@@ -950,6 +1078,10 @@ mrb_mruby_curl_gem_init(mrb_state* mrb)
   mrb_define_const(mrb, _class_curl, "HTTP_2_0", mrb_fixnum_value(CURL_HTTP_VERSION_2_0));
   mrb_define_const(mrb, _class_curl, "TIMEOUT", mrb_nil_value());
   mrb_define_const(mrb, _class_curl, "TIMEOUT_MS", mrb_nil_value());
+  mrb_define_const(mrb, _class_curl, "CONNECT_TIMEOUT", mrb_nil_value());
+  mrb_define_const(mrb, _class_curl, "CONNECT_TIMEOUT_MS", mrb_nil_value());
+  mrb_define_const(mrb, _class_curl, "LOW_SPEED_LIMIT", mrb_nil_value());
+  mrb_define_const(mrb, _class_curl, "LOW_SPEED_TIME", mrb_nil_value());
 
   mrb_gc_arena_restore(mrb, ai);
 }
