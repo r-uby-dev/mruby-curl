@@ -1,18 +1,11 @@
 <p align="center">
   <a href="https://github.com/llmrb/mruby-curl">
-    <img src="https://github.com/llmrb/llm.rb/raw/main/llm.png" width="200"
+    <img src="https://github.com/llmrb/llm.rb/raw/main/rubydev.svg" width="200"
          height="200" border="0" alt="mruby-curl">
   </a>
 </p>
 
-<p align="center">
-  <a href="LICENSE">
-    <img src="https://img.shields.io/badge/License-MIT-orange.svg"
-         alt="License">
-  </a>
-</p>
-
-## About
+> a [r.uby.dev](https://r.uby.dev) project
 
 mruby-curl is an [mruby](https://mruby.org) wrapper for
 [libcurl](https://curl.se/libcurl/). It provides HTTP client capabilities
@@ -164,7 +157,7 @@ puts response.body
 
 #### Configuration
 
-**Timeouts**
+**Request timeout**
 
 Set timeouts in seconds or milliseconds:
 
@@ -174,17 +167,18 @@ curl.timeout = 30       # 30 seconds
 curl.timeout_ms = 5000  # 5 seconds (overrides timeout if both are set)
 ```
 
+**Stream timeout**
+
 For long-running streams, prefer a connection timeout plus a low-speed
-timeout instead of a total request timeout:
+timeout instead of a total request timeout. This lets an active stream
+run longer than 60 seconds, but aborts if the transfer drops below 1 byte
+per second for 60 seconds:
 
 ```ruby
 curl.connect_timeout = 10
 curl.low_speed_limit = 1
 curl.low_speed_time = 60
 ```
-
-This lets an active stream run longer than 60 seconds, but aborts if the
-transfer drops below 1 byte per second for 60 seconds.
 
 **SSL verification**
 
