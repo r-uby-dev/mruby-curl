@@ -146,6 +146,21 @@ mrb_curl_parse_response(mrb_state *mrb, const char *data, size_t size)
   return mrb_funcall_argv(mrb, parser, mrb_intern_cstr(mrb, "parse_response"), 1, args);
 }
 
+static mrb_value
+mrb_curl_set_response_code(mrb_state *mrb, mrb_value response, CURL *curl)
+{
+  long response_code = 0;
+
+  if (mrb_nil_p(response) || !curl) return response;
+
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+  if (response_code > 0) {
+    mrb_iv_set(mrb, response, mrb_intern_cstr(mrb, "status_code"), mrb_fixnum_value(response_code));
+  }
+
+  return response;
+}
+
 static void
 mrb_curl_multi_unlink_request(mrb_curl_multi_request *req)
 {
@@ -213,7 +228,6 @@ static size_t
 memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
   MEMFILE* mf = (MEMFILE*) stream;
   int block = size * nmemb;
-  long response_code = 0;
 
   mrb_value args[2];
   mrb_state* mrb = mf->mrb;
@@ -227,10 +241,7 @@ memfwrite_callback(char* ptr, size_t size, size_t nmemb, void* stream) {
   }
 
   if (!mrb_nil_p(mf->header) && mf->curl) {
-    curl_easy_getinfo(mf->curl, CURLINFO_RESPONSE_CODE, &response_code);
-    if (response_code > 0) {
-      mrb_iv_set(mrb, mf->header, mrb_intern_cstr(mrb, "status_code"), mrb_fixnum_value(response_code));
-    }
+    mrb_curl_set_response_code(mrb, mf->header, mf->curl);
   }
 
   args[0] = mf->header;
@@ -430,7 +441,7 @@ mrb_curl_perform(mrb_state *mrb, mrb_value self, mrb_value url, mrb_value header
     return mrb_nil_value();
   }
 
-  str = mrb_curl_parse_response(mrb, mf->data, mf->size);
+  str = mrb_curl_set_response_code(mrb, mrb_curl_parse_response(mrb, mf->data, mf->size), curl);
   memfclose(mf);
   return str;
 }
@@ -593,7 +604,7 @@ mrb_curl_send(mrb_state *mrb, mrb_value self)
     return mrb_nil_value();
   }
 
-  str = mrb_curl_parse_response(mrb, mf->data, mf->size);
+  str = mrb_curl_set_response_code(mrb, mrb_curl_parse_response(mrb, mf->data, mf->size), curl);
   memfclose(mf);
   return str;
 }
@@ -883,10 +894,10 @@ mrb_curl_multi_request_response(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_RUNTIME_ERROR, curl_easy_strerror(req->result));
   }
   if (req->mf && !mrb_nil_p(req->mf->header)) {
-    return req->mf->header;
+    return mrb_curl_set_response_code(mrb, req->mf->header, req->easy);
   }
   if (req->mf && req->mf->data) {
-    return mrb_curl_parse_response(mrb, req->mf->data, req->mf->size);
+    return mrb_curl_set_response_code(mrb, mrb_curl_parse_response(mrb, req->mf->data, req->mf->size), req->easy);
   }
 
   return mrb_nil_value();
